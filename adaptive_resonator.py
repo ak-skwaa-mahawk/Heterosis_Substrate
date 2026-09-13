@@ -184,12 +184,21 @@ if __name__ == "__main__":
     pulses = [1.2] + [0.0] * 3
     for p in pulses:
         st = adaptive_engine.step(external_drive=p)
-        print(f"Cycle {st['seq']:02d} | Tuned Pitch: {st['tuned_pitch']} | Shell: {st['octave_shell']} | Phase: {st['harmonic_phase']} | Mode: {st['mode']}")
+        print(f"Cycle {st['seq']:02d} | Mode: {st['mode']} | Tuned Pitch: {st['tuned_pitch']} | Phase Vel: {st['phase_velocity']}")
 
-    print("\n=== [2] TESTING NON-LINEAR WAVEGUIDE BALANCE ===")
+    print("\n=== [2] TESTING WAVEGUIDE TRANSFER FILTER ===")
     waveguide = AdaptiveResonator()
-    v, s, t = 3.1730059, 0.5, 0.1
-    for step in range(1, 4):
-        res = waveguide.balance_step(v, s, t, ingress_pressure=1.0)
-        print(f"Step {step:02d} | Balanced Vel: {res['balanced_velocity']:>8.4f} | Effective Shear: {res['effective_shear']:>7.4f} | Seal: {res['harmonic_seal'][:16]}...")
-        v, s, t = res["balanced_velocity"], res["effective_shear"], res["reflected_drag"]
+    phase_vel = 14.35
+    leak_val = 0.42
+    torque_val = 0.08
+    pressure_val = 0.95
+    
+    res = waveguide.balance_step(
+        phase_velocity=phase_vel,
+        macro_leak=leak_val,
+        counter_torque=torque_val,
+        ingress_pressure=pressure_val
+    )
+    print(f"Filter Mode: {res['mode']}")
+    print(f"Balanced Velocity Output: {res['balanced_velocity']}")
+    print(f"Double-SHA256 Harmonic Seal: {res['harmonic_seal']}")
