@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .substrate_pages/
 *.bin
+CURRENT_STATE.json
+orchestrator_runtime.log
+FAULT_POSTMORTEM.json
+ADAPTIVE_RESONANCE_TRACE.json
+__pycache__/
+*.pyc
