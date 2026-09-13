@@ -159,54 +159,54 @@ class TestFPTIPCContract(unittest.TestCase):
         self.assertEqual(res.get("status"), "REJECTED")
         self.assertEqual(res.get("error", {}).get("code"), "BOUNDS_EXCEEDED")
 
-def test_framing_resilience_under_fragmented_stream(self):
-        """Verify recv_exact handles arbitrary 1-to-3 byte fragmentations without dropping frames."""
-        from fpt_substrate_client import recv_exact
-        import struct, json
-
-        sample_payload = json.dumps({"protocol": "HET_FPT_IPC_v1", "status": "ACCEPTED"}).encode("utf-8")
-        full_wire_bytes = b"HET1" + struct.pack(">I", len(sample_payload)) + sample_payload
-
-        # Simulate adversarial streaming fragmentation (chunk sizes: 1, 2, 1, 3, 2...)
-        chunk_sizes = [1, 2, 1, 3, 2, 1, 4]
-        fragments = []
-        idx = 0
-        c_i = 0
-        while idx < len(full_wire_bytes):
-            sz = chunk_sizes[c_i % len(chunk_sizes)]
-            fragments.append(full_wire_bytes[idx:idx + sz])
-            idx += sz
-            c_i += 1
-
-        class MockFragmentedSocket:
-            def __init__(self, chunks):
-                self.chunks = list(chunks)
-
-            def recv(self, n):
-                if not self.chunks:
-                    return b""
-                chunk = self.chunks.pop(0)
-                if len(chunk) > n:
-                    left, right = chunk[:n], chunk[n:]
-                    self.chunks.insert(0, right)
-                    return left
-                return chunk
-
-        mock_sock = MockFragmentedSocket(fragments)
-
-        # 1. Unpack magic
-        magic = recv_exact(mock_sock, 4)
-        self.assertEqual(magic, b"HET1")
-
-        # 2. Unpack length
-        len_bytes = recv_exact(mock_sock, 4)
-        (p_len,) = struct.unpack(">I", len_bytes)
-        self.assertEqual(p_len, len(sample_payload))
-
-        # 3. Unpack payload
-        payload_bytes = recv_exact(mock_sock, p_len)
-        decoded = json.loads(payload_bytes.decode("utf-8"))
-        self.assertEqual(decoded["status"], "ACCEPTED")
-
+    def test_framing_resilience_under_fragmented_stream(self):
+            """Verify recv_exact handles arbitrary 1-to-3 byte fragmentations without dropping frames."""
+            from fpt_substrate_client import recv_exact
+            import struct, json
+    
+            sample_payload = json.dumps({"protocol": "HET_FPT_IPC_v1", "status": "ACCEPTED"}).encode("utf-8")
+            full_wire_bytes = b"HET1" + struct.pack(">I", len(sample_payload)) + sample_payload
+    
+            # Simulate adversarial streaming fragmentation (chunk sizes: 1, 2, 1, 3, 2...)
+            chunk_sizes = [1, 2, 1, 3, 2, 1, 4]
+            fragments = []
+            idx = 0
+            c_i = 0
+            while idx < len(full_wire_bytes):
+                sz = chunk_sizes[c_i % len(chunk_sizes)]
+                fragments.append(full_wire_bytes[idx:idx + sz])
+                idx += sz
+                c_i += 1
+    
+            class MockFragmentedSocket:
+                def __init__(self, chunks):
+                    self.chunks = list(chunks)
+    
+                def recv(self, n):
+                    if not self.chunks:
+                        return b""
+                    chunk = self.chunks.pop(0)
+                    if len(chunk) > n:
+                        left, right = chunk[:n], chunk[n:]
+                        self.chunks.insert(0, right)
+                        return left
+                    return chunk
+    
+            mock_sock = MockFragmentedSocket(fragments)
+    
+            # 1. Unpack magic
+            magic = recv_exact(mock_sock, 4)
+            self.assertEqual(magic, b"HET1")
+    
+            # 2. Unpack length
+            len_bytes = recv_exact(mock_sock, 4)
+            (p_len,) = struct.unpack(">I", len_bytes)
+            self.assertEqual(p_len, len(sample_payload))
+    
+            # 3. Unpack payload
+            payload_bytes = recv_exact(mock_sock, p_len)
+            decoded = json.loads(payload_bytes.decode("utf-8"))
+            self.assertEqual(decoded["status"], "ACCEPTED")
+    
 if __name__ == "__main__":
     unittest.main()
