@@ -35,6 +35,8 @@ class MasterSubstrateOrchestrator:
         self.running = True
         self.state_lock = threading.Lock()
         self.active_precession = 0.0
+        self.intent_cache = {}  # intent_id -> cached EXECUTE_RECEIPT
+        self.MAX_INTENT_CACHE = 256
         self.last_shear = 0.0
         self.last_drag = 0.0
         self.last_alert_time = 0.0
@@ -47,6 +49,7 @@ class MasterSubstrateOrchestrator:
         if os.path.exists(SOCKET_PATH):
             os.remove(SOCKET_PATH)
 
+        self.latest_state = {}
         self.latest_state = self.step_manifold(external_drive=1.0)
 
     def _trigger_android_alert(self, diag_code: str, velocity: float, damping_torque: float):
@@ -76,7 +79,7 @@ class MasterSubstrateOrchestrator:
 
         threading.Thread(target=_notify, daemon=True).start()
 
-    def step_manifold(self, external_drive: float = 0.0) -> dict:
+    def step_manifold(self, external_drive: float = 0.0, workload_manifest: str = None) -> dict:
         with self.state_lock:
             adjusted_drive = max(0.0001, external_drive + self.active_precession)
             raw_state = self.substrate.pulse(external_drive=adjusted_drive)
@@ -121,6 +124,21 @@ class MasterSubstrateOrchestrator:
             self.last_shear = effective_shear
             self.last_drag = reflected_drag
 
+            # Cryptographic binding of workload manifest
+            manifest_hex = workload_manifest if (workload_manifest and len(workload_manifest) == 64) else "0" * 64
+            manifest_bytes = bytes.fromhex(manifest_hex)
+            packed_core = struct.pack(
+                ">Qdddd",
+                raw_state["seq"],
+                raw_velocity,
+                balanced_velocity,
+                effective_shear,
+                self.active_precession
+            ) + manifest_bytes
+            bound_core_hash = hashlib.sha256(packed_core).hexdigest()
+            prior_rcpt = getattr(self, "latest_state", {}).get("egress_receipt", "0" * 64) if getattr(self, "latest_state", None) else "0" * 64
+            bound_egress_receipt = hashlib.sha256((bound_core_hash + prior_rcpt).encode("utf-8")).hexdigest()
+
             final_record = {
                 "seq": raw_state["seq"],
                 "exec_ns": raw_state["exec_ns"],
@@ -138,8 +156,8 @@ class MasterSubstrateOrchestrator:
                 "sentinel_status": sentinel_status,
                 "precession_torque": round(self.active_precession, 6),
                 "compensation_receipt": comp_receipt["compensation_receipt"],
-                "core_hash": raw_state["core_hash"],
-                "egress_receipt": raw_state["egress_receipt"]
+                "core_hash": bound_core_hash,
+                "egress_receipt": bound_egress_receipt
             }
 
             self.latest_state = final_record
@@ -179,9 +197,56 @@ class MasterSubstrateOrchestrator:
                 data.extend(chunk)
 
             intent = json.loads(data.decode("utf-8"))
-            intent_id = intent.get("intent_id", "")
+            intent_id = intent.get("intent_id")
 
-            # Boundary validation
+            # 1. Intent ID required
+            if not intent_id:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "error": {"code": "SCHEMA_VIOLATION", "detail": "Missing mandatory intent_id"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            # 2. Idempotency Check
+            with self.state_lock:
+                if intent_id in self.intent_cache:
+                    cached_receipt = dict(self.intent_cache[intent_id])
+                    cached_receipt["idempotent_replay"] = True
+                    self._send_fpt_response(client, cached_receipt)
+                    return
+
+            # 3. Mandatory Lineage Check
+            fpt_auth = intent.get("fpt_authority", {})
+            asserted_anchor = fpt_auth.get("lineage_anchor")
+            if not asserted_anchor:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "intent_id": intent_id,
+                    "error": {"code": "LINEAGE_REQUIRED", "detail": "Missing mandatory lineage_anchor in fpt_authority"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            with self.state_lock:
+                current_receipt = self.latest_state.get("egress_receipt", "0" * 64)
+
+            if asserted_anchor != current_receipt:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "intent_id": intent_id,
+                    "error": {"code": "LINEAGE_MISMATCH", "detail": f"Asserted {asserted_anchor} != {current_receipt}"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            # 4. Boundary Validation
             constraints = intent.get("manifold_constraints", {})
             max_shear = constraints.get("max_acceptable_shear", 24.0)
             drive = constraints.get("pressure_ingress", 1.0)
@@ -197,25 +262,9 @@ class MasterSubstrateOrchestrator:
                 self._send_fpt_response(client, resp)
                 return
 
-            # Lineage verification
-            fpt_auth = intent.get("fpt_authority", {})
-            asserted_anchor = fpt_auth.get("lineage_anchor", "")
-            with self.state_lock:
-                current_receipt = self.latest_state.get("egress_receipt", "0" * 64)
-
-            if asserted_anchor and asserted_anchor != current_receipt:
-                resp = {
-                    "protocol": "HET_FPT_IPC_v1",
-                    "message_type": "EXECUTE_RECEIPT",
-                    "status": "REJECTED",
-                    "intent_id": intent_id,
-                    "error": {"code": "LINEAGE_MISMATCH", "detail": f"Asserted {asserted_anchor} != {current_receipt}"}
-                }
-                self._send_fpt_response(client, resp)
-                return
-
-            # Execute bounded transition
-            result = self.step_manifold(external_drive=drive)
+            # 5. Execute bounded transition with cryptographically bound workload manifest
+            workload_manifest = intent.get("workload_commitment", {}).get("manifest_sha256", "")
+            result = self.step_manifold(external_drive=drive, workload_manifest=workload_manifest)
             is_dampened = "FAULT_DAMPENED" in result.get("tripwire_state", "")
 
             resp = {
@@ -236,13 +285,19 @@ class MasterSubstrateOrchestrator:
                 },
                 "lineage": {
                     "prior_receipt": current_receipt,
-                    "workload_manifest": intent.get("workload_commitment", {}).get("manifest_sha256", ""),
+                    "workload_manifest": workload_manifest,
                     "core_hash": result.get("core_hash", ""),
                     "egress_receipt": result.get("egress_receipt", "")
                 }
             }
             if is_dampened:
                 resp["error"] = {"code": "PITCH_DISPARITY", "detail": result.get("tripwire_state")}
+
+            # Store in idempotency cache
+            with self.state_lock:
+                if len(self.intent_cache) >= self.MAX_INTENT_CACHE:
+                    self.intent_cache.pop(next(iter(self.intent_cache)))
+                self.intent_cache[intent_id] = resp
 
             self._send_fpt_response(client, resp)
         except Exception as e:
@@ -256,7 +311,6 @@ class MasterSubstrateOrchestrator:
                 self._send_fpt_response(client, err_resp)
             except Exception:
                 pass
-
     def ipc_listener_worker(self):
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)

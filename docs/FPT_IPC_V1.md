@@ -98,7 +98,7 @@ json
   "status": "REJECTED",
   "intent_id": "string",
   "error": {
-    "code": "LINEAGE_MISMATCH | SCHEMA_VIOLATION | BOUNDS_EXCEEDED",
+    "code": "LINEAGE_REQUIRED | LINEAGE_MISMATCH | SCHEMA_VIOLATION | BOUNDS_EXCEEDED",
     "detail": "string explanation"
   }
 }
