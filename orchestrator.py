@@ -1,23 +1,31 @@
-import os
-import sys
-import time
+import hashlib
 import json
-import socket
+import os
 import select
+import socket
+import struct
+import sys
 import threading
+import time
 
 from mesh_substrate import MeshCoupledSubstrate
 from drift_compensator import ChiralDriftCompensator
 from tripwire_sentinel import SubstrateTripwire
+from adaptive_resonator import AdaptiveResonator
 from consensus_engine import HeterosisConsensus
+
+SOCKET_PATH = "/data/data/com.termux/files/usr/tmp/heterosis.sock"
 
 class MasterSubstrateOrchestrator:
     """
-    Sovereign Headless Orchestrator.
-    Binds POSIX domain socket IPC, hardware entropy sampling, drift precession,
-    sentinel tripwire defenses, and zero-broker UDP peer mesh synchronization.
+    Unified Sovereign Orchestrator.
+    Fuses POSIX nanosecond clock entropy (MeshCoupledSubstrate),
+    acoustic waveguide damping (AdaptiveResonator), closed-loop precession
+    compensation (ChiralDriftCompensator), boundary sentinel defense (SubstrateTripwire),
+    and peer consensus interlocks over UDP port 43210.
     """
-    SOCKET_PATH = "/data/data/com.termux/files/usr/tmp/heterosis.sock"
+    DYNAMIC_PITCH = 3.1730059
+    HARMONIC_OCTAVE = 8.0
     BROADCAST_PORT = 43210
     BUFFER_SIZE = 4096
 
@@ -26,51 +34,112 @@ class MasterSubstrateOrchestrator:
         self.substrate = MeshCoupledSubstrate(seed=seed)
         self.compensator = ChiralDriftCompensator()
         self.sentinel = SubstrateTripwire()
-        
+        self.waveguide = AdaptiveResonator()
+
         self.running = True
         self.state_lock = threading.Lock()
-        self.latest_state = self.substrate.pulse(external_drive=1.0)
         self.active_precession = 0.0
+        self.last_shear = 0.0
+        self.last_drag = 0.0
+
+        # Ensure runtime IPC socket directory exists
+        sock_dir = os.path.dirname(SOCKET_PATH)
+        if not os.path.exists(sock_dir):
+            os.makedirs(sock_dir, exist_ok=True)
+        if os.path.exists(SOCKET_PATH):
+            os.remove(SOCKET_PATH)
+
+        # Prime initial state
+        self.latest_state = self.step_manifold(external_drive=1.0)
 
     def step_manifold(self, external_drive: float = 0.0) -> dict:
-        """Executes a fully audited cycle through the integrated pipeline."""
+        """
+        Executes a closed-loop manifold cycle:
+        Precession -> Hardware Pulse -> Waveguide Damping -> Sentinel Audit -> State Commit
+        """
         with self.state_lock:
-            # 1. Apply compensating micro-precession to intake pressure
-            adjusted_drive = max(0.0, external_drive + self.active_precession)
-            
-            # 2. Advance core physics on bare metal
+            # 1. Closed-loop precession compensation on intake
+            adjusted_drive = max(0.0001, external_drive + self.active_precession)
+
+            # 2. Advance core physics coupled to hardware clock jitter
             raw_state = self.substrate.pulse(external_drive=adjusted_drive)
-            
-            # 3. Sentinel audit & fault checking
-            is_safe, damping_torque, diag_code = self.sentinel.evaluate_boundary(raw_state)
+            raw_velocity = raw_state["phase_velocity"]
+
+            # 3. Waveguide Transfer Filter: Damp phase velocity spikes prior to sentinel audit
+            filter_res = self.waveguide.balance_step(
+                phase_velocity=raw_velocity,
+                macro_leak=self.last_shear,
+                counter_torque=self.last_drag,
+                ingress_pressure=adjusted_drive
+            )
+
+            balanced_velocity = filter_res["balanced_velocity"]
+            effective_shear = filter_res["effective_shear"]
+            reflected_drag = filter_res["reflected_drag"]
+            filter_mode = filter_res["mode"]
+            filter_seal = filter_res["harmonic_seal"]
+
+            # 4. Tripwire Sentinel Audit against balanced velocity
+            audit_target = {
+                "seq": raw_state["seq"],
+                "phase_velocity": balanced_velocity,
+                "chiral_vent": effective_shear,
+                "net_pressure": raw_state["net_pressure"]
+            }
+            is_safe, damping_torque, diag_code = self.sentinel.evaluate_boundary(audit_target)
+
             if not is_safe:
-                # Apply emergency dampening to internal shear
+                balanced_velocity = max(0.0001, balanced_velocity + damping_torque)
                 self.substrate.chiral_shear = max(0.0, self.substrate.chiral_shear + damping_torque)
-                raw_state["sentinel_status"] = f"FAULT_DAMPENED:{diag_code}"
+                sentinel_status = f"FAULT_DAMPENED:{diag_code}"
             else:
-                raw_state["sentinel_status"] = "STABLE"
+                sentinel_status = "STABLE"
 
-            # 4. Update phase drift tracking and calculate next precession bias
-            comp_receipt = self.compensator.calculate_precession(raw_state)
+            # 5. Calculate phase drift tracking and calculate next precession bias
+            comp_receipt = self.compensator.calculate_precession({
+                "seq": raw_state["seq"],
+                "phase_velocity": balanced_velocity,
+                "net_pressure": raw_state["net_pressure"],
+                "macro_leak": effective_shear
+            })
             self.active_precession = comp_receipt["restoring_precession"]
-            
-            raw_state["precession_torque"] = self.active_precession
-            self.latest_state = raw_state
+            self.last_shear = effective_shear
+            self.last_drag = reflected_drag
 
-            # Write atomic runtime state to disk for local observers
+            # Update working telemetry
+            final_record = {
+                "seq": raw_state["seq"],
+                "exec_ns": raw_state["exec_ns"],
+                "ingress_drive": round(external_drive, 6),
+                "adjusted_drive": round(adjusted_drive, 6),
+                "net_pressure": raw_state["net_pressure"],
+                "raw_velocity": round(raw_velocity, 6),
+                "phase_velocity": round(balanced_velocity, 6),
+                "octave_shell": filter_res["octave_shell"],
+                "harmonic_phase": filter_res["harmonic_phase"],
+                "filter_mode": filter_mode,
+                "filter_seal": filter_seal,
+                "effective_shear": round(effective_shear, 6),
+                "env_jitter": raw_state.get("env_jitter", 0.0),
+                "sentinel_status": sentinel_status,
+                "precession_torque": round(self.active_precession, 6),
+                "compensation_receipt": comp_receipt["compensation_receipt"],
+                "core_hash": raw_state["core_hash"],
+                "egress_receipt": raw_state["egress_receipt"]
+            }
+
+            self.latest_state = final_record
+
+            # Atomic snapshot for local observers (CLI / watchdog)
             with open("CURRENT_STATE.json", "w") as f:
-                json.dump(raw_state, f, indent=2)
+                json.dump(final_record, f, indent=2)
 
-            return raw_state
+            return final_record
 
     def ipc_listener_worker(self):
-        """Manages local UNIX domain socket for on-device commands."""
-        # Clean stale socket
-        if os.path.exists(self.SOCKET_PATH):
-            os.remove(self.SOCKET_PATH)
-
+        """Manages local UNIX domain socket for on-device commands and telemetry streaming."""
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(self.SOCKET_PATH)
+        server.bind(SOCKET_PATH)
         server.listen(5)
         server.setblocking(False)
 
@@ -80,20 +149,30 @@ class MasterSubstrateOrchestrator:
                 for s in readable:
                     client, _ = server.accept()
                     raw = client.recv(1024).decode("utf-8").strip()
-                    try:
-                        drive = float(raw) if raw else 0.0
-                    except ValueError:
-                        drive = 0.0
 
-                    result = self.step_manifold(external_drive=drive)
+                    if raw.startswith("pulse"):
+                        parts = raw.split()
+                        drive = float(parts[1]) if len(parts) > 1 else 1.0
+                    else:
+                        try:
+                            drive = float(raw) if raw else 0.0
+                        except ValueError:
+                            drive = 0.0
+
+                    if drive > 0.0:
+                        result = self.step_manifold(external_drive=drive)
+                    else:
+                        with self.state_lock:
+                            result = self.latest_state
+
                     client.sendall(json.dumps(result).encode("utf-8") + b"\n")
                     client.close()
             except Exception:
                 continue
 
         server.close()
-        if os.path.exists(self.SOCKET_PATH):
-            os.remove(self.SOCKET_PATH)
+        if os.path.exists(SOCKET_PATH):
+            os.remove(SOCKET_PATH)
 
     def udp_mesh_listener_worker(self):
         """Listens for remote peer state broadcasts and executes consensus interlocks."""
@@ -113,18 +192,16 @@ class MasterSubstrateOrchestrator:
                 data, _ = sock.recvfrom(self.BUFFER_SIZE)
                 payload = json.loads(data.decode("utf-8"))
 
-                # Discard self-originated packets
                 if payload.get("node_id") == self.node_id:
                     continue
 
                 peer_state = payload.get("state", {})
                 with self.state_lock:
-                    # Synthesize hybrid vigor via consensus engine
                     proof = HeterosisConsensus.interlock(self.latest_state, peer_state)
                     entrainment_drive = max(0.0, proof["heterosis_gain"] - 1.0)
 
-                # Feed consensus delta into next step
-                self.step_manifold(external_drive=entrainment_drive)
+                if entrainment_drive > 0.001:
+                    self.step_manifold(external_drive=entrainment_drive)
 
             except socket.timeout:
                 continue
@@ -160,8 +237,7 @@ class MasterSubstrateOrchestrator:
 
     def start(self):
         print(f"[*] Starting Master Substrate Orchestrator: Node '{self.node_id}'")
-        
-        # Spin up concurrent operational threads
+
         t_ipc = threading.Thread(target=self.ipc_listener_worker, daemon=True)
         t_udp_in = threading.Thread(target=self.udp_mesh_listener_worker, daemon=True)
         t_udp_out = threading.Thread(target=self.udp_mesh_broadcaster_worker, daemon=True)
@@ -170,25 +246,27 @@ class MasterSubstrateOrchestrator:
         t_udp_in.start()
         t_udp_out.start()
 
-        print("[+] IPC listening on UNIX socket.")
-        print("[+] Mesh transceiver bound to UDP port 43210.")
-        print("[+] Autonomous manifold cycle initialized.\n")
+        print(f"[+] IPC socket listening: {SOCKET_PATH}")
+        print(f"[+] Mesh transceiver active on UDP port {self.BROADCAST_PORT}")
+        print(f"[+] Waveguide Filter Active: Dynamic Pitch = {self.DYNAMIC_PITCH}\n")
 
-        # Main thread loop maintains sovereign internal cadence
         try:
-            while True:
-                # Cycle autonomous forward momentum every 3 seconds
+            while self.running:
                 state = self.step_manifold(external_drive=0.0)
-                print(f"[CYCLE {state['seq']:04d}] Phase Vel: {state['phase_velocity']:>8.4f} | "
-                      f"Mode: {state.get('mode', 'N/A')} | "
-                      f"Sentinel: {state['sentinel_status']} | "
-                      f"Precession: {state['precession_torque']:>9.6f}")
-                time.sleep(3.0)
-
+                print(f"[CYCLE {state['seq']:04d}] Vel: {state['phase_velocity']:>7.3f} | "
+                      f"Mode: {state['filter_mode']:<18} | "
+                      f"Sentinel: {state['sentinel_status']:<6} | "
+                      f"Torque: {state['precession_torque']:>+8.5f}")
+                time.sleep(2.5)
         except KeyboardInterrupt:
             print("\n[-] Shutting down Master Orchestrator gracefully...")
             self.running = False
             time.sleep(0.5)
+            if os.path.exists(SOCKET_PATH):
+                os.remove(SOCKET_PATH)
+
+# Aliases for compatibility
+SovereignOrchestrator = MasterSubstrateOrchestrator
 
 if __name__ == "__main__":
     node_name = sys.argv[1] if len(sys.argv) > 1 else f"node_{os.getpid()}"
