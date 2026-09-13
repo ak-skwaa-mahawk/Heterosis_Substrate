@@ -15,7 +15,10 @@ def query_socket(payload: str = "") -> dict:
     try:
         client.settimeout(2.0)
         client.connect(SOCKET_PATH)
-        client.sendall(payload.encode("utf-8"))
+        
+        # Guarantee a terminator is sent so recv() doesn't hang
+        msg = payload.strip() if payload else "status"
+        client.sendall((msg + "\n").encode("utf-8"))
         
         chunks = []
         while True:
@@ -47,7 +50,6 @@ def render_dashboard(state: dict):
     core_hash = state.get("core_hash", "0" * 64)
     egress = state.get("egress_receipt", "0" * 64)
 
-    # Visual 8-octave ring with active node illumination
     ring_nodes = []
     for i in range(8):
         if i == current_shell:
@@ -56,8 +58,7 @@ def render_dashboard(state: dict):
             ring_nodes.append(f"\033[90m[{i}]\033[0m")
     ring_display = " - ".join(ring_nodes)
 
-    # ANSI Box Display
-    print("\033[H\033[J", end="")  # Clear screen
+    print("\033[H\033[J", end="")
     print("╔═[ HETEROSIS MANIFOLD: EDGE TELEMETRY MONITOR ]══════════════════════════╗")
     print(f"║ Sequence Cycle : {seq:<8} | Execution Time: {state.get('exec_ns', 0):>8} ns                ║")
     print("╠═════════════════════════════════════════════════════════════════════════╣")
@@ -76,7 +77,7 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "watch"
 
     if cmd == "status":
-        state = query_socket("")
+        state = query_socket("status")
         render_dashboard(state)
 
     elif cmd == "pulse":
@@ -88,7 +89,7 @@ def main():
     elif cmd == "watch":
         try:
             while True:
-                state = query_socket("")
+                state = query_socket("status")
                 render_dashboard(state)
                 time.sleep(1.0)
         except KeyboardInterrupt:
