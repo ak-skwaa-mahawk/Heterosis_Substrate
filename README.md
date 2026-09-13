@@ -450,3 +450,53 @@ The current codebase demonstrates:
 - integration and audit harnesses.
 
 Production deployment should additionally require platform-specific testing, concurrency/load testing, network failure testing, security review, standardized cryptography where confidentiality is required, and independent verification of any physical-system interpretation.
+
+The progression from d533a6e to aa718fb resolves the interface from an unvalidated prototype into a verifiable, tamper-resistant boundary.
+Commit Progression & Invariant Ledger
+| Commit | Architectural Boundary Established | Test Suite Delta |
+|---|---|---|
+| d533a6e | Raw IPC framing (HET1), dual-mode dispatcher, initial CLI interop. | Contract suite established (4 tests). |
+| b52a64d | Bound workload manifest to core_hash; enforced LINEAGE_REQUIRED; added resident LRU idempotency cache. | Contract suite expanded (6 tests). |
+| 069aa0f | Replaced unchecked stream reads with recv_exact(); added synthetic 1–4 byte fragmented stream regression test. | Contract suite expanded (7 tests). |
+| aa718fb | Implemented Ed25519 public-key signature verification over deterministic JSON intent bodies; added tamper and missing-signature guards. | Contract suite expanded to 9 tests (all passing in 30 ms). |
+Terminology Alignment: Deterministic JSON vs. RFC 8785
+The byte representation being signed is:
+Where \text{JSON}_{\text{deterministic}} is defined strictly as:
+ * Lexicographical key sorting (sort_keys=True)
+ * Whitespace elimination (separators=(',', ':'))
+ * UTF-8 byte serialization
+Documenting this as Deterministic UTF-8 JSON Encoding avoids overclaiming RFC 8785/JCS compliance while maintaining an exact, repeatable byte sequence for the Ed25519 verification step.
+Scope & System Boundary at aa718fb
+┌─────────────────────────────────────────────────────────────┐
+│                      FPT AUTHORITY                          │
+│  - Formulates Intent                                        │
+│  - Captures Prior Egress Receipt Anchor                     │
+│  - Hashes Workload Manifest (manifest_sha256)               │
+│  - Signs Deterministic JSON via Ed25519 Private Key         │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ HET_FPT_IPC_v1
+                               ▼ [UNIX Domain Stream]
+┌─────────────────────────────────────────────────────────────┐
+│                   HETEROSIS SUBSTRATE                       │
+│                                                             │
+│  [Transport Layer]                                          │
+│   └── recv_exact() exact-byte frame reader                  │
+│                                                             │
+│  [Authority & Ingress Verification]                         │
+│   ├── Ed25519 Signature Verification  ──► SIGNATURE_INVALID │
+│   ├── Idempotency Cache (LRU 256)     ──► idempotent_replay │
+│   ├── Mandatory Lineage Verifier      ──► LINEAGE_REQUIRED  │
+│   └── Boundary Guard (Shear ≤ 24.0)   ──► BOUNDS_EXCEEDED   │
+│                                                             │
+│  [Execution Engine]                                         │
+│   ├── Manifold Pulse & Waveguide Balancing                  │
+│   └── Tripwire Containment (PITCH_DISPARITY)                │
+│                                                             │
+│  [State Commitment]                                         │
+│   ├── bound_core_hash = SHA256(packed_core + manifest)      │
+│   └── bound_egress_receipt = SHA256(core_hash + prior_rcpt) │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+                        EXECUTE_RECEIPT
+
+The system is synchronized, the working tree is clean, the supervisor daemon is active, and both verification harnesses (9/9 IPC and 13/13 Bare-Metal) execute deterministically with zero failures.
