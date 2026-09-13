@@ -1,3 +1,4 @@
+from cryptography.hazmat.primitives.asymmetric import ed25519
 import json
 import socket
 import struct
@@ -43,3 +44,16 @@ class SubstrateIPCClient:
 
             data = recv_exact(sock, payload_len)
             return json.loads(data.decode("utf-8"))
+
+
+def sign_intent(intent: dict, private_key: ed25519.Ed25519PrivateKey) -> dict:
+    signed_intent = json.loads(json.dumps(intent))
+    fpt_auth = dict(signed_intent.get("fpt_authority", {}))
+    fpt_auth.pop("signature", None)
+    fpt_auth["public_key_hex"] = private_key.public_key().public_bytes_raw().hex()
+    signed_intent["fpt_authority"] = fpt_auth
+
+    canonical_bytes = json.dumps(signed_intent, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    signature = private_key.sign(canonical_bytes)
+    signed_intent["fpt_authority"]["signature"] = signature.hex()
+    return signed_intent

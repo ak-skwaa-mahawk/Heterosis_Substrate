@@ -1,3 +1,4 @@
+from cryptography.hazmat.primitives.asymmetric import ed25519
 import hashlib
 import json
 import os
@@ -168,6 +169,37 @@ class MasterSubstrateOrchestrator:
             return final_record
 
 
+    def _verify_fpt_signature(self, intent: dict) -> tuple:
+        fpt_auth = intent.get("fpt_authority", {})
+        sig_hex = fpt_auth.get("signature")
+        if not sig_hex:
+            return False, "SIGNATURE_MISSING"
+
+        pubkey_hex = fpt_auth.get("public_key_hex")
+        if not pubkey_hex:
+            return False, "AUTH_KEY_MISSING"
+
+        try:
+            sig_bytes = bytes.fromhex(sig_hex)
+            pubkey_bytes = bytes.fromhex(pubkey_hex)
+            if len(sig_bytes) != 64 or len(pubkey_bytes) != 32:
+                return False, "SIGNATURE_INVALID"
+        except ValueError:
+            return False, "SIGNATURE_INVALID"
+
+        # Canonicalize payload without the signature field
+        unsigned_intent = json.loads(json.dumps(intent))
+        unsigned_intent["fpt_authority"] = dict(unsigned_intent["fpt_authority"])
+        unsigned_intent["fpt_authority"].pop("signature", None)
+        canonical_bytes = json.dumps(unsigned_intent, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+        try:
+            pubkey = ed25519.Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+            pubkey.verify(sig_bytes, canonical_bytes)
+            return True, "OK"
+        except Exception:
+            return False, "SIGNATURE_INVALID"
+
     def _recv_exact(self, sock, n):
         buf = bytearray()
         while len(buf) < n:
@@ -207,6 +239,19 @@ class MasterSubstrateOrchestrator:
                     "message_type": "EXECUTE_RECEIPT",
                     "status": "REJECTED",
                     "error": {"code": "SCHEMA_VIOLATION", "detail": "Missing mandatory intent_id"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            # 1b. Cryptographic Ed25519 Authority Verification
+            sig_valid, sig_err = self._verify_fpt_signature(intent)
+            if not sig_valid:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "intent_id": intent_id,
+                    "error": {"code": sig_err, "detail": f"FPT cryptographic signature rejected: {sig_err}"}
                 }
                 self._send_fpt_response(client, resp)
                 return
