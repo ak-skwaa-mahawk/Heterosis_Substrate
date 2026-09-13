@@ -2,8 +2,10 @@ import hashlib
 import json
 import os
 import select
+import shutil
 import socket
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -22,12 +24,13 @@ class MasterSubstrateOrchestrator:
     Fuses POSIX nanosecond clock entropy (MeshCoupledSubstrate),
     acoustic waveguide damping (AdaptiveResonator), closed-loop precession
     compensation (ChiralDriftCompensator), boundary sentinel defense (SubstrateTripwire),
-    and peer consensus interlocks over UDP port 43210.
+    decentralized peer consensus over UDP port 43210, and native Android push notifications.
     """
     DYNAMIC_PITCH = 3.1730059
     HARMONIC_OCTAVE = 8.0
     BROADCAST_PORT = 43210
     BUFFER_SIZE = 4096
+    ALERT_COOLDOWN_SEC = 5.0
 
     def __init__(self, node_id: str = "sovereign_core", seed: str = "bare_metal_origin_dan_kee"):
         self.node_id = node_id
@@ -41,6 +44,10 @@ class MasterSubstrateOrchestrator:
         self.active_precession = 0.0
         self.last_shear = 0.0
         self.last_drag = 0.0
+        self.last_alert_time = 0.0
+
+        # Verify whether termux-notification binary exists on PATH
+        self.has_termux_api = shutil.which("termux-notification") is not None
 
         # Ensure runtime IPC socket directory exists
         sock_dir = os.path.dirname(SOCKET_PATH)
@@ -51,6 +58,37 @@ class MasterSubstrateOrchestrator:
 
         # Prime initial state
         self.latest_state = self.step_manifold(external_drive=1.0)
+
+    def _trigger_android_alert(self, diag_code: str, velocity: float, damping_torque: float):
+        """Dispatches an asynchronous termux-notification to avoid stalling the tick rate."""
+        now = time.time()
+        if now - self.last_alert_time < self.ALERT_COOLDOWN_SEC:
+            return
+
+        self.last_alert_time = now
+
+        def _notify():
+            if not self.has_termux_api:
+                return
+            title = f"[HETEROSIS TRIPWIRE] {diag_code}"
+            content = (
+                f"Velocity: {velocity:.4f} | Torque: {damping_torque:.4f} | "
+                f"Node: {self.node_id}"
+            )
+            cmd = [
+                "termux-notification",
+                "--id", "heterosis_sentinel",
+                "-t", title,
+                "-c", content,
+                "--priority", "high",
+                "--sound"
+            ]
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
+            except Exception:
+                pass
+
+        threading.Thread(target=_notify, daemon=True).start()
 
     def step_manifold(self, external_drive: float = 0.0) -> dict:
         """
@@ -92,6 +130,8 @@ class MasterSubstrateOrchestrator:
                 balanced_velocity = max(0.0001, balanced_velocity + damping_torque)
                 self.substrate.chiral_shear = max(0.0, self.substrate.chiral_shear + damping_torque)
                 sentinel_status = f"FAULT_DAMPENED:{diag_code}"
+                # Emit hardware notification
+                self._trigger_android_alert(diag_code, raw_velocity, damping_torque)
             else:
                 sentinel_status = "STABLE"
 
@@ -130,7 +170,7 @@ class MasterSubstrateOrchestrator:
 
             self.latest_state = final_record
 
-            # Atomic snapshot for local observers (CLI / watchdog)
+            # Atomic snapshot for local observers
             with open("CURRENT_STATE.json", "w") as f:
                 json.dump(final_record, f, indent=2)
 
@@ -191,7 +231,6 @@ class MasterSubstrateOrchestrator:
                     data, addr = s.recvfrom(self.BUFFER_SIZE)
                     try:
                         payload = json.loads(data.decode("utf-8"))
-                        # Interlock convergence processing
                         interlock_status = HeterosisConsensus.interlock(payload, self.latest_state)
                         if interlock_status.get("trigger_pulse", False):
                             self.step_manifold(external_drive=interlock_status.get("pulse_weight", 0.5))
@@ -207,16 +246,18 @@ class MasterSubstrateOrchestrator:
         self.running = True
         self.ipc_thread = threading.Thread(target=self.ipc_listener_worker, daemon=True)
         self.udp_thread = threading.Thread(target=self.udp_mesh_listener_worker, daemon=True)
-        
+
         self.ipc_thread.start()
         self.udp_thread.start()
         print(f"[Orchestrator] Sovereign daemon live on IPC {SOCKET_PATH} and UDP {self.BROADCAST_PORT}")
+        print(f"[Orchestrator] Android Notification Alerts: {'ENABLED' if self.has_termux_api else 'DISABLED (Install termux-api)'}")
 
     def shutdown(self):
         """Gracefully tears down daemon threads and unlinks system hooks."""
         self.running = False
         print("[Orchestrator] Halting manifold processing gracefully...")
-
+        if os.path.exists(SOCKET_PATH):
+            os.remove(SOCKET_PATH)
 
 if __name__ == "__main__":
     orchestrator = MasterSubstrateOrchestrator()
