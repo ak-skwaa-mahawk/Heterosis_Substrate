@@ -1,6 +1,59 @@
-This establishes the baseline execution loop:
-​Dynamic Pitch: Enforces \approx 3.1730059 over static planar ratios to hold directionality.
-​Octave Leak: Calculates the boundary remainder past the base 6-pair triad, capturing the shear as macro_leak.
-​Headless Chain of Custody: Links sequential state transitions via double-SHA256 hashes without UI overhead or third-party dependencies.
+# Heterosis Substrate
 
-In evolutionary biology, heterosis (hybrid vigor) proves that mixing genetic lineages often yields offspring with superior traits—such as enhanced immune response, greater physical endurance, and better adaptive capabilities—compared to heavily inbred, "purebred" lines. The kennel club’s paperwork is an administrative construct designed to maintain artificial scarcity and aesthetic uniformity, but nature only measures fitness by functional utility and survival physics.When applied to the current technological landscape, this parallel holds up perfectly:The Engineering Parallel: Hybrid Vigor vs. Proprietary PedigreesThe "Artificial Pedigree" (Corporate Labs): Monoculture models trained in highly controlled corporate environments. They are heavily tuned to meet specific, rigid compliance benchmarks, corporate PR safety guidelines, and artificial alignments. Like highly inbred pedigrees, they can become fragile, over-optimized for specific "show conditions" (benchmarks), and highly dependent on massive infrastructure to survive.The "Wolf-Rottweiler" (Decentralized Open-Source): Highly adaptive, multi-model pipelines, quantized architectures, and hybrid open-source codebases. These systems are stripped of corporate bloat and optimized to run efficiently on consumer silicon. They combine different architecture styles, pruning techniques, and localized fine-tuning to perform in the real world. They don't care about regulatory "paperwork"—they operate on raw compute efficiency, execution speed, and local autonomy.The Survival Physics of SoftwareJust as the hybrid animal thrives because it is built for the immediate pressures of its environment rather than an arbitrary standard, open-weights and headless architectures thrive because they are built for pure execution. When a developer compiles an optimized model locally, the metric of success isn't whether it passed a corporate ethics board; it is whether the Directed Acyclic Graph (DAG) executes correctly, returns the precise egress state, and maintains an immutable chain of custody.Ultimately, artificial pedigrees require massive protective moats—like legal regulations and compute restrictions—precisely because they struggle to compete with the raw, unmitigated utility of functional hybridization in the open wild.
+A lightweight, deterministic runtime substrate for fault-tolerant state execution, distributed gossip interlock, and tamper-evident state lineage across constrained environments.
+
+## Core Architectural Invariants
+
+Heterosis Substrate acts as an execution substrate underlying high-level orchestration authorities (e.g., FPT / Synara). It enforces closed-loop physical invariants across cyclic state transitions:
+
+* **Dynamic Pitch Invariant ($P \approx 3.1730059$):** Enforces a deterministic directional multiplier preserving balance between energy ingress and internal phase velocity.
+* **Octave Leak Routing:** Measures energy dispersion beyond the fundamental 8-octave manifold, routing excess shear into adaptive acoustic waveguides (`adaptive_resonator.py`).
+* **Closed-Loop Precession Compensation:** Dynamically calculates restoring counter-torque vectors (`drift_compensator.py`) to prevent phase runaway without human intervention.
+* **Autonomous Boundary Sentinel:** Active circuit breakers (`tripwire_sentinel.py`) clamp anomalies into `FAULT_DAMPENED` modes prior to state commitment.
+* **Cryptographic State Lineage:** Sequential state transitions are anchored via POSIX nanosecond clock jitter and double-SHA256 hash chains (`core_hash` -> `egress_receipt`), providing an immutable, zero-dependency audit trace.
+
+## System Topology
+
+┌────────────────────────────────────────────────────────┐
+│               SYNARA / COGNITIVE LAYER                 │
+└───────────────────────────┬────────────────────────────┘
+│ Workload Intent
+┌───────────────────────────▼────────────────────────────┐
+│         FPT (FORMAL PROVENANCE / EXECUTION AUTH)       │
+│           Invariant Checks & Identity Anchoring        │
+└───────────────────────────┬────────────────────────────┘
+│ Deterministic Execution
+┌───────────────────────────▼────────────────────────────┐
+│                  HETEROSIS SUBSTRATE                   │
+│  ┌──────────────────────┬───────────────────────────┐  │
+│  │ Orchestrator Daemon  │ Supervisor Watchdog       │  │
+│  │ (IPC: heterosis.sock)│ (termux-wake-lock / LMK)  │  │
+│  └──────────┬───────────┴─────────────┬─────────────┘  │
+│             │                         │                │
+│  ┌──────────▼───────────┐ ┌───────────▼─────────────┐  │
+│  │ Mesh / Waveguide Core│ │ UDP Gossip (Port 43210) │  │
+│  │ Invariants & Circuit │ │ Decentralized Consensus │  │
+│  └──────────┬───────────┘ └───────────┬─────────────┘  │
+│             └─────────────┬───────────┘                │
+│                           ▼                            │
+│              Cryptographic Chain of Custody            │
+│                 (Double-SHA256 Ledger)                 │
+└────────────────────────────────────────────────────────┘
+
+
+## Bare-Metal Service Layer
+
+* **IPC Transport:** UNIX Domain Socket (`/data/data/com.termux/files/usr/tmp/heterosis.sock`) delivering sub-millisecond local telemetry and command execution.
+* **Gossip Interlock:** Asynchronous UDP transport on port `43210` facilitating multi-node phase entrainment without centralized coordination.
+* **Process Watchdog:** Resident Python supervisor with crash-backoff dynamics, stale socket unlinking, and hardware wake-lock integration.
+
+## Verification & Audit
+
+Run the bare-metal test harness to verify the full 13-stage mathematical, cryptographic, and circuit-breaker suite:
+
+```bash
+python audit_harness.py
+
+Inspect live runtime telemetry:
+python substrate_cli.py status
+
