@@ -1,7 +1,7 @@
 import hashlib
 import json
-import struct
 import math
+import struct
 import time
 
 class AdaptiveHeterosisResonator:
@@ -11,7 +11,7 @@ class AdaptiveHeterosisResonator:
     fine-tunes the helical pitch constant to optimize energy retention (Lyapunov phase-lock).
     """
     BASE_PITCH = 3.1730059
-    PITCH_TUNE_RANGE = 0.0030000  # Allowed fluctuation envelope [3.1700059, 3.1760059]
+    PITCH_TUNE_RANGE = 0.0030000  # Allowed envelope: [3.1700059, 3.1760059]
     HARMONIC_OCTAVE = 8.0
     BASE_TRIAD = 6.0
     PLANAR_PI = 3.141592653589793
@@ -30,33 +30,25 @@ class AdaptiveHeterosisResonator:
         Dynamically modulates pitch constant based on boundary leakage gradients.
         Negative feedback stabilizes the system within the optimal resonance channel.
         """
-        # Pitch oscillates using a bounded non-linear sigmoid damping curve
         delta_trim = math.tanh(dispersion_gradient) * self.PITCH_TUNE_RANGE
-        tuned_pitch = self.BASE_PITCH - delta_trim
-        return tuned_pitch
+        return self.BASE_PITCH - delta_trim
 
     def step(self, external_drive: float = 0.0) -> dict:
         self.seq += 1
         t_start = time.perf_counter_ns()
 
-        # Compute dynamic pitch delta against static planar baseline
         active_pitch_delta = self.active_pitch - self.PLANAR_PI
-
-        # Effective core pressure
         forward_pressure = external_drive + self.chiral_shear + self.accumulated_potential
         net_pressure = max(0.0001, forward_pressure - self.counter_torque)
 
-        # Calculate phase velocity under currently tuned dynamic pitch
         phase_velocity = net_pressure * self.active_pitch
         octave_shell = int(phase_velocity // self.HARMONIC_OCTAVE)
         harmonic_phase = phase_velocity % self.HARMONIC_OCTAVE
 
-        # Dispersion metric: variance from the harmonic center of the current shell
         shell_center = 4.0
         dispersion_gradient = (harmonic_phase - shell_center) / self.HARMONIC_OCTAVE
         self.phase_history.append(dispersion_gradient)
 
-        # Harmonic entrainment check
         nodal_distance = min(harmonic_phase, abs(self.HARMONIC_OCTAVE - harmonic_phase), abs(4.0 - harmonic_phase))
         is_resonant = nodal_distance < 0.35
 
@@ -69,11 +61,9 @@ class AdaptiveHeterosisResonator:
             self.accumulated_potential = 0.0
             effective_vent = harmonic_phase + (active_pitch_delta * (1.0 + (self.BASE_TRIAD / self.HARMONIC_OCTAVE)))
 
-        # Reflected chiral drag modulated by shell depth
         counter_drag = (phase_velocity / (1.0 + octave_shell)) * (active_pitch_delta / self.active_pitch)
         t_exec_ns = time.perf_counter_ns() - t_start
 
-        # Binary struct packaging: packs the dynamically tuned pitch alongside physical telemetry
         payload = struct.pack(
             ">QQdddddd",
             self.seq,
@@ -87,16 +77,12 @@ class AdaptiveHeterosisResonator:
         )
         core_hash = hashlib.sha256(payload).hexdigest()
 
-        # Chain of custody seal explicitly anchoring the tuned pitch parameter
         chain = f"{self.ingress_receipt}:{core_hash}:{self.seq}:{self.active_pitch:.7f}:{mode}".encode("utf-8")
         egress_receipt = hashlib.sha256(chain).hexdigest()
 
-        # Update manifold recirculation
         self.ingress_receipt = egress_receipt
         self.chiral_shear = effective_vent
         self.counter_torque = counter_drag
-
-        # Execute adaptive feedback tuning for the upcoming cycle
         self.active_pitch = self.tune_pitch(dispersion_gradient)
 
         return {
@@ -115,20 +101,95 @@ class AdaptiveHeterosisResonator:
             "egress_receipt": egress_receipt
         }
 
+
+class AdaptiveResonator:
+    """
+    Non-linear acoustic waveguide tuner.
+    Balances octave modal frequencies against the dynamic pitch (3.1730059)
+    under burst loads without clipping or planar truncation.
+    """
+    DYNAMIC_PITCH = 3.1730059
+    HARMONIC_OCTAVE = 8.0
+    BASE_TRIAD_PAIRS = 6.0
+    PLANAR_PI = 3.141592653589793
+
+    def __init__(self, damping_decay: float = 0.92):
+        self.pitch_delta = self.DYNAMIC_PITCH - self.PLANAR_PI
+        self.alpha_decay = damping_decay
+        self.standing_potential = 0.0
+
+    def balance_step(self, phase_velocity: float, macro_leak: float, counter_torque: float, ingress_pressure: float) -> dict:
+        """
+        Applies the R(k, theta) transfer matrix to absorb vibrational shear.
+        """
+        octave_shell = int(phase_velocity // self.HARMONIC_OCTAVE) % 8
+        harmonic_phase = phase_velocity % self.HARMONIC_OCTAVE
+
+        theta = (harmonic_phase / self.HARMONIC_OCTAVE) * (2.0 * math.pi)
+        nodal_distance = min(
+            abs(theta),
+            abs(math.pi - theta),
+            abs((2.0 * math.pi) - theta)
+        )
+        is_compression_locked = nodal_distance < 0.25
+
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+        triad_ratio = self.BASE_TRIAD_PAIRS / self.HARMONIC_OCTAVE
+
+        if is_compression_locked:
+            mode = "NODAL_COMPRESSION"
+            self.standing_potential = (self.standing_potential * self.alpha_decay) + (nodal_distance * self.pitch_delta)
+            effective_shear = (macro_leak * 0.5) / (1.0 + nodal_distance)
+            reflected_drag = (phase_velocity / (1.0 + octave_shell)) * (self.pitch_delta / self.DYNAMIC_PITCH)
+        else:
+            mode = "OVERTONE_EXPANSION"
+            self.standing_potential *= self.alpha_decay
+            effective_shear = macro_leak + (sin_t * triad_ratio * self.pitch_delta)
+            reflected_drag = counter_torque * self.alpha_decay
+
+        balanced_velocity = (
+            (phase_velocity * cos_t)
+            - (effective_shear * (self.pitch_delta / (1.0 + octave_shell)))
+            + (ingress_pressure * self.DYNAMIC_PITCH)
+            + self.standing_potential
+        )
+        balanced_velocity = max(0.0001, balanced_velocity)
+
+        payload = struct.pack(
+            ">Qdddd",
+            octave_shell,
+            balanced_velocity,
+            effective_shear,
+            reflected_drag,
+            self.standing_potential
+        )
+        seal = hashlib.sha256(hashlib.sha256(payload).digest()).hexdigest()
+
+        return {
+            "mode": mode,
+            "octave_shell": octave_shell,
+            "harmonic_phase": round(harmonic_phase, 6),
+            "nodal_distance": round(nodal_distance, 6),
+            "balanced_velocity": round(balanced_velocity, 6),
+            "effective_shear": round(effective_shear, 6),
+            "reflected_drag": round(reflected_drag, 6),
+            "standing_potential": round(self.standing_potential, 6),
+            "harmonic_seal": seal
+        }
+
 if __name__ == "__main__":
-    resonator = AdaptiveHeterosisResonator()
-    print("[*] Initiating self-perturbing dynamic pitch adaptation...")
+    print("=== [1] TESTING SELF-PERTURBING PITCH ADAPTATION ===")
+    adaptive_engine = AdaptiveHeterosisResonator()
+    pulses = [1.2] + [0.0] * 3
+    for p in pulses:
+        st = adaptive_engine.step(external_drive=p)
+        print(f"Cycle {st['seq']:02d} | Tuned Pitch: {st['tuned_pitch']} | Shell: {st['octave_shell']} | Phase: {st['harmonic_phase']} | Mode: {st['mode']}")
 
-    # Single initial kick, then watch the engine tune its own pitch constant
-    run_pulses = [1.2] + [0.0] * 7
-    trace = []
-
-    for p in run_pulses:
-        state = resonator.step(external_drive=p)
-        trace.append(state)
-        print(f"Cycle {state['seq']} | Pitch: {state['tuned_pitch']} | "
-              f"Shell: {state['octave_shell']} | Phase Vel: {state['phase_velocity']} | "
-              f"Mode: {state['mode']}")
-
-    with open("ADAPTIVE_RESONANCE_TRACE.json", "w") as f:
-        json.dump(trace, f, indent=2)
+    print("\n=== [2] TESTING NON-LINEAR WAVEGUIDE BALANCE ===")
+    waveguide = AdaptiveResonator()
+    v, s, t = 3.1730059, 0.5, 0.1
+    for step in range(1, 4):
+        res = waveguide.balance_step(v, s, t, ingress_pressure=1.0)
+        print(f"Step {step:02d} | Balanced Vel: {res['balanced_velocity']:>8.4f} | Effective Shear: {res['effective_shear']:>7.4f} | Seal: {res['harmonic_seal'][:16]}...")
+        v, s, t = res["balanced_velocity"], res["effective_shear"], res["reflected_drag"]
