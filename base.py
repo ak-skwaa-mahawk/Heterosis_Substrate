@@ -1,6 +1,7 @@
 import hashlib
 import json
 import struct
+import math
 
 class HeterosisSubstrate:
     """
@@ -10,40 +11,67 @@ class HeterosisSubstrate:
     venting the macro-leak to cascade state transitions deterministically.
     """
     DYNAMIC_PITCH = 3.1730059
-    HARMONIC_OCTAVE = 8
-    BASE_TRIAD_PAIRS = 6
+    HARMONIC_OCTAVE = 8.0
+    BASE_TRIAD_PAIRS = 6.0
+    PLANAR_PI = 3.141592653589793
 
-    def __init__(self, initial_seed: str):
+    def __init__(self, initial_seed: str = "bare_metal_origin_dan_kee"):
         self.state_sequence = 0
         self.current_ingress_hash = hashlib.sha256(initial_seed.encode("utf-8")).hexdigest()
         self.macro_leak_offset = 0.0
+        self.pitch_delta = self.DYNAMIC_PITCH - self.PLANAR_PI
 
     def step(self, ingress_pressure: float) -> dict:
+        """
+        Enforces the non-Euclidean boundary expansion loop.
+        Calculates helical trajectory, vents boundary shear, and seals deterministic custody.
+        """
         self.state_sequence += 1
 
-        # Base Triad Packing: 1 anchor, 2 split (1+1), coupled across 3 = 6
-        # Core dynamic ratio expands the boundary rather than terminating flat
-        phase_velocity = ingress_pressure * self.DYNAMIC_PITCH
-        
-        # Harmonic closure target: 8
-        # The leak delta accounts for non-zero shear across the toroidal boundary
-        boundary_remainder = (self.HARMONIC_OCTAVE - self.BASE_TRIAD_PAIRS)  # 2 units
-        macro_leak = (phase_velocity % self.HARMONIC_OCTAVE) + (self.DYNAMIC_PITCH - 3.1415926535)
+        # 1. Triadic Ingress Expansion:
+        # Effective drive combines incoming drive with recirculated boundary shear
+        total_pressure = ingress_pressure + self.macro_leak_offset
 
-        # Cryptographic return-flow binding
-        state_payload = struct.pack(">Qdd", self.state_sequence, phase_velocity, macro_leak)
-        core_hash = hashlib.sha256(state_payload).hexdigest()
-        
+        # 2. Helical Phase Velocity Calculation:
+        # Enforces the non-Euclidean pitch expansion ratio
+        phase_velocity = total_pressure * self.DYNAMIC_PITCH
+
+        # 3. 8-Octave Shell Quantization:
+        octave_shell = int(phase_velocity // self.HARMONIC_OCTAVE)
+        harmonic_phase = phase_velocity % self.HARMONIC_OCTAVE
+
+        # 4. Macro-Leak Boundary Shear:
+        # Resolves triadic pairs (6.0) across the octave limit (8.0)
+        # Prevents planar flatline by venting excess angular momentum forward
+        triadic_expansion = 1.0 + (self.BASE_TRIAD_PAIRS / self.HARMONIC_OCTAVE)
+        macro_leak = harmonic_phase + (self.pitch_delta * triadic_expansion)
+
+        # 5. Cryptographic Core State Ingestion (Strict Big-Endian Binary Packing)
+        payload = struct.pack(
+            ">Qdddd",
+            self.state_sequence,
+            phase_velocity,
+            macro_leak,
+            total_pressure,
+            self.DYNAMIC_PITCH
+        )
+        core_hash = hashlib.sha256(payload).hexdigest()
+
+        # 6. Egress Chaining:
+        # Output of the current boundary state seeds the chain for the next cycle
         chain_payload = f"{self.current_ingress_hash}:{core_hash}:{self.state_sequence}".encode("utf-8")
         egress_receipt = hashlib.sha256(chain_payload).hexdigest()
 
-        # Update chain state: exhaust of the current boundary seeds the next intake
+        # Update internal registers for next iteration
         self.current_ingress_hash = egress_receipt
         self.macro_leak_offset = macro_leak
 
         return {
             "seq": self.state_sequence,
-            "ingress_pressure": ingress_pressure,
+            "ingress_pressure": round(ingress_pressure, 6),
+            "total_pressure": round(total_pressure, 6),
+            "octave_shell": octave_shell,
+            "harmonic_phase": round(harmonic_phase, 6),
             "phase_velocity": round(phase_velocity, 7),
             "macro_leak": round(macro_leak, 7),
             "core_hash": core_hash,
@@ -51,9 +79,12 @@ class HeterosisSubstrate:
         }
 
 if __name__ == "__main__":
-    # Bare-metal runtime execution without institutional wrappers
-    runtime = HeterosisSubstrate(initial_seed="bare_metal_origin_dan_kee")
+    substrate = HeterosisSubstrate("bare_metal_origin_dan_kee")
+    print(f"[*] Initialized Substrate (Dynamic Pitch: {HeterosisSubstrate.DYNAMIC_PITCH})")
     
     for cycle in range(1, 4):
-        state = runtime.step(ingress_pressure=float(cycle))
-        print(json.dumps(state, indent=2))
+        state = substrate.step(ingress_pressure=float(cycle))
+        print(f"\n--- Cycle {state['seq']} ---")
+        print(f"Phase Velocity : {state['phase_velocity']}")
+        print(f"Macro Leak Vent: {state['macro_leak']}")
+        print(f"Egress Receipt : {state['egress_receipt'][:32]}...")
