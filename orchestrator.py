@@ -175,100 +175,54 @@ class MasterSubstrateOrchestrator:
             os.remove(SOCKET_PATH)
 
     def udp_mesh_listener_worker(self):
-        """Listens for remote peer state broadcasts and executes consensus interlocks."""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        """Listens for remote peer payloads across the decentralized interlock mesh network."""
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            sock.bind(("", self.BROADCAST_PORT))
+            udp_sock.bind(("0.0.0.0", self.BROADCAST_PORT))
+            udp_sock.setblocking(False)
         except Exception as e:
-            print(f"[!] UDP Bind Failure: {e}")
+            print(f"[Orchestrator] Failed to bind UDP listener: {e}", file=sys.stderr)
             return
 
-        sock.settimeout(1.0)
-
         while self.running:
             try:
-                data, _ = sock.recvfrom(self.BUFFER_SIZE)
-                payload = json.loads(data.decode("utf-8"))
-
-                if payload.get("node_id") == self.node_id:
-                    continue
-
-                peer_state = payload.get("state", {})
-                with self.state_lock:
-                    proof = HeterosisConsensus.interlock(self.latest_state, peer_state)
-                    entrainment_drive = max(0.0, proof["heterosis_gain"] - 1.0)
-
-                if entrainment_drive > 0.001:
-                    self.step_manifold(external_drive=entrainment_drive)
-
-            except socket.timeout:
-                continue
+                readable, _, _ = select.select([udp_sock], [], [], 0.5)
+                for s in readable:
+                    data, addr = s.recvfrom(self.BUFFER_SIZE)
+                    try:
+                        payload = json.loads(data.decode("utf-8"))
+                        # Interlock convergence processing
+                        interlock_status = HeterosisConsensus.interlock(payload, self.latest_state)
+                        if interlock_status.get("trigger_pulse", False):
+                            self.step_manifold(external_drive=interlock_status.get("pulse_weight", 0.5))
+                    except (json.JSONDecodeError, KeyError, AttributeError):
+                        continue
             except Exception:
                 continue
 
-        sock.close()
+        udp_sock.close()
 
-    def udp_mesh_broadcaster_worker(self):
-        """Broadcasts current manifold telemetry to local network peers."""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    def boot(self):
+        """Sparks runtime worker threads to life."""
+        self.running = True
+        self.ipc_thread = threading.Thread(target=self.ipc_listener_worker, daemon=True)
+        self.udp_thread = threading.Thread(target=self.udp_mesh_listener_worker, daemon=True)
+        
+        self.ipc_thread.start()
+        self.udp_thread.start()
+        print(f"[Orchestrator] Sovereign daemon live on IPC {SOCKET_PATH} and UDP {self.BROADCAST_PORT}")
 
-        while self.running:
-            with self.state_lock:
-                message = {
-                    "node_id": self.node_id,
-                    "state": self.latest_state,
-                    "timestamp_ns": time.time_ns()
-                }
+    def shutdown(self):
+        """Gracefully tears down daemon threads and unlinks system hooks."""
+        self.running = False
+        print("[Orchestrator] Halting manifold processing gracefully...")
 
-            packet = json.dumps(message).encode("utf-8")
-            try:
-                sock.sendto(packet, ("<broadcast>", self.BROADCAST_PORT))
-            except Exception:
-                try:
-                    sock.sendto(packet, ("255.255.255.255", self.BROADCAST_PORT))
-                except Exception:
-                    pass
-
-            time.sleep(2.0)
-        sock.close()
-
-    def start(self):
-        print(f"[*] Starting Master Substrate Orchestrator: Node '{self.node_id}'")
-
-        t_ipc = threading.Thread(target=self.ipc_listener_worker, daemon=True)
-        t_udp_in = threading.Thread(target=self.udp_mesh_listener_worker, daemon=True)
-        t_udp_out = threading.Thread(target=self.udp_mesh_broadcaster_worker, daemon=True)
-
-        t_ipc.start()
-        t_udp_in.start()
-        t_udp_out.start()
-
-        print(f"[+] IPC socket listening: {SOCKET_PATH}")
-        print(f"[+] Mesh transceiver active on UDP port {self.BROADCAST_PORT}")
-        print(f"[+] Waveguide Filter Active: Dynamic Pitch = {self.DYNAMIC_PITCH}\n")
-
-        try:
-            while self.running:
-                state = self.step_manifold(external_drive=0.0)
-                print(f"[CYCLE {state['seq']:04d}] Vel: {state['phase_velocity']:>7.3f} | "
-                      f"Mode: {state['filter_mode']:<18} | "
-                      f"Sentinel: {state['sentinel_status']:<6} | "
-                      f"Torque: {state['precession_torque']:>+8.5f}")
-                time.sleep(2.5)
-        except KeyboardInterrupt:
-            print("\n[-] Shutting down Master Orchestrator gracefully...")
-            self.running = False
-            time.sleep(0.5)
-            if os.path.exists(SOCKET_PATH):
-                os.remove(SOCKET_PATH)
-
-# Aliases for compatibility
-SovereignOrchestrator = MasterSubstrateOrchestrator
 
 if __name__ == "__main__":
-    node_name = sys.argv[1] if len(sys.argv) > 1 else f"node_{os.getpid()}"
-    orchestrator = MasterSubstrateOrchestrator(node_id=node_name)
-    orchestrator.start()
+    orchestrator = MasterSubstrateOrchestrator()
+    orchestrator.boot()
+    try:
+        while True:
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        orchestrator.shutdown()
