@@ -1,0 +1,55 @@
+{
+  "seq": 1,
+  "external_drive": 1.0,
+  "accumulated_shear_intake": 0.0,
+  "effective_pressure": 1.0,
+  "octave_shell": 0,
+  "phase_velocity": 3.173006,
+  "macro_leak_vent": 3.227979,
+  "core_hash": "2ab3d639344cfb6c14963ec5a9e5023a84141a2eead6d5856df1fa5e71a5f95b",
+  "egress_receipt": "5b60568c937a76670f40898902efdd0080f9b478d97498fcac8ef359eb4171eb"
+}
+{
+  "seq": 2,
+  "external_drive": 0.0,
+  "accumulated_shear_intake": 3.227979,
+  "effective_pressure": 3.227979,
+  "octave_shell": 1,
+  "phase_velocity": 10.242397,
+  "macro_leak_vent": 2.29737,
+  "core_hash": "cbe7cf576753c6804951bdb60f02f451fea3e669d9eaf7e2aa28886aeea3676f",
+  "egress_receipt": "ff303dfecc01f32054c80b22312a07aafc519a094f46c1f204ce8faf4653bfe0"
+}
+{
+  "seq": 3,
+  "external_drive": 0.0,
+  "accumulated_shear_intake": 2.29737,
+  "effective_pressure": 2.29737,
+  "octave_shell": 0,
+  "phase_velocity": 7.289568,
+  "macro_leak_vent": 7.344541,
+  "core_hash": "37cdcb5432780b0d6c038ead1f421495ccc8d712f4fbe82329609e02b2f79e0b",
+  "egress_receipt": "a62c96e71cca03230a50d6dde31ac669243fcdbac966cf7c285f77af8ba84bdf"
+}
+{
+  "seq": 4,
+  "external_drive": 0.0,
+  "accumulated_shear_intake": 7.344541,
+  "effective_pressure": 7.344541,
+  "octave_shell": 2,
+  "phase_velocity": 23.304273,
+  "macro_leak_vent": 7.359246,
+  "core_hash": "3aca78298b1ee8b296bbfaeeb7bdc2b9d33db1e0bd51f35ebcccc840a52dd80e",
+  "egress_receipt": "efa2cb8676cd608efe642e96e6d03550624ccfffbc71083cbfa66bcdcd5d47ea"
+}
+{
+  "seq": 5,
+  "external_drive": 0.0,
+  "accumulated_shear_intake": 7.359246,
+  "effective_pressure": 7.359246,
+  "octave_shell": 2,
+  "phase_velocity": 23.350931,
+  "macro_leak_vent": 7.405904,
+  "core_hash": "16756f5edb4b346cd859d01ad8157ddeeed04ed5e01a485d70a17d7f7a1e4ca8",
+  "egress_receipt": "a8a66762cd6377a46e050a5ba7bb1bca3aaa006909405adfd9ae1fbf99c059a9"
+}
