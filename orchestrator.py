@@ -168,6 +168,15 @@ class MasterSubstrateOrchestrator:
             return final_record
 
 
+    def _recv_exact(self, sock, n):
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = sock.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionError("Socket closed prematurely while reading expected bytes")
+            buf.extend(chunk)
+        return bytes(buf)
+
     def _send_fpt_response(self, client, response_payload):
         serialized = json.dumps(response_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         frame = b"HET1" + struct.pack(">I", len(serialized)) + serialized
@@ -175,9 +184,7 @@ class MasterSubstrateOrchestrator:
 
     def _handle_fpt_ipc(self, client, initial_magic):
         try:
-            len_bytes = client.recv(4)
-            if len(len_bytes) < 4:
-                return
+            len_bytes = self._recv_exact(client, 4)
             (payload_len,) = struct.unpack(">I", len_bytes)
             if payload_len > 65536:
                 resp = {
@@ -189,13 +196,7 @@ class MasterSubstrateOrchestrator:
                 self._send_fpt_response(client, resp)
                 return
 
-            data = bytearray()
-            while len(data) < payload_len:
-                chunk = client.recv(min(4096, payload_len - len(data)))
-                if not chunk:
-                    break
-                data.extend(chunk)
-
+            data = self._recv_exact(client, payload_len)
             intent = json.loads(data.decode("utf-8"))
             intent_id = intent.get("intent_id")
 
