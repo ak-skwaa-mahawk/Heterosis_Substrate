@@ -149,6 +149,114 @@ class MasterSubstrateOrchestrator:
 
             return final_record
 
+
+    def _send_fpt_response(self, client, response_payload):
+        serialized = json.dumps(response_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        frame = b"HET1" + struct.pack(">I", len(serialized)) + serialized
+        client.sendall(frame)
+
+    def _handle_fpt_ipc(self, client, initial_magic):
+        try:
+            len_bytes = client.recv(4)
+            if len(len_bytes) < 4:
+                return
+            (payload_len,) = struct.unpack(">I", len_bytes)
+            if payload_len > 65536:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "error": {"code": "PAYLOAD_TOO_LARGE", "detail": "Payload exceeds 64KB limit"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            data = bytearray()
+            while len(data) < payload_len:
+                chunk = client.recv(min(4096, payload_len - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
+
+            intent = json.loads(data.decode("utf-8"))
+            intent_id = intent.get("intent_id", "")
+
+            # Boundary validation
+            constraints = intent.get("manifold_constraints", {})
+            max_shear = constraints.get("max_acceptable_shear", 24.0)
+            drive = constraints.get("pressure_ingress", 1.0)
+
+            if max_shear > 24.0 or drive > 48.0 or drive < 0.0001:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "intent_id": intent_id,
+                    "error": {"code": "BOUNDS_EXCEEDED", "detail": "Constraint ceiling exceeded"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            # Lineage verification
+            fpt_auth = intent.get("fpt_authority", {})
+            asserted_anchor = fpt_auth.get("lineage_anchor", "")
+            with self.state_lock:
+                current_receipt = self.latest_state.get("egress_receipt", "0" * 64)
+
+            if asserted_anchor and asserted_anchor != current_receipt:
+                resp = {
+                    "protocol": "HET_FPT_IPC_v1",
+                    "message_type": "EXECUTE_RECEIPT",
+                    "status": "REJECTED",
+                    "intent_id": intent_id,
+                    "error": {"code": "LINEAGE_MISMATCH", "detail": f"Asserted {asserted_anchor} != {current_receipt}"}
+                }
+                self._send_fpt_response(client, resp)
+                return
+
+            # Execute bounded transition
+            result = self.step_manifold(external_drive=drive)
+            is_dampened = "FAULT_DAMPENED" in result.get("tripwire_state", "")
+
+            resp = {
+                "protocol": "HET_FPT_IPC_v1",
+                "message_type": "EXECUTE_RECEIPT",
+                "status": "DAMPENED" if is_dampened else "ACCEPTED",
+                "intent_id": intent_id,
+                "cycle_sequence": result.get("seq", 0),
+                "telemetry": {
+                    "execution_duration_ns": result.get("execution_ns", 0),
+                    "raw_velocity": result.get("raw_velocity", 0.0),
+                    "balanced_velocity": result.get("phase_velocity", 0.0),
+                    "phase_offset": result.get("harmonic_phase", 0.0),
+                    "active_shell": result.get("octave_shell", 0),
+                    "macro_leak": result.get("macro_leak", 0.0),
+                    "precession_bias": self.active_precession,
+                    "tripwire_state": result.get("tripwire_state", "NOMINAL")
+                },
+                "lineage": {
+                    "prior_receipt": current_receipt,
+                    "workload_manifest": intent.get("workload_commitment", {}).get("manifest_sha256", ""),
+                    "core_hash": result.get("core_hash", ""),
+                    "egress_receipt": result.get("egress_receipt", "")
+                }
+            }
+            if is_dampened:
+                resp["error"] = {"code": "PITCH_DISPARITY", "detail": result.get("tripwire_state")}
+
+            self._send_fpt_response(client, resp)
+        except Exception as e:
+            err_resp = {
+                "protocol": "HET_FPT_IPC_v1",
+                "message_type": "EXECUTE_RECEIPT",
+                "status": "REJECTED",
+                "error": {"code": "SCHEMA_VIOLATION", "detail": str(e)}
+            }
+            try:
+                self._send_fpt_response(client, err_resp)
+            except Exception:
+                pass
+
     def ipc_listener_worker(self):
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
@@ -160,24 +268,30 @@ class MasterSubstrateOrchestrator:
                 readable, _, _ = select.select([server], [], [], 0.5)
                 for s in readable:
                     client, _ = server.accept()
-                    raw = client.recv(1024).decode("utf-8").strip()
-
-                    if raw.startswith("pulse"):
-                        parts = raw.split()
-                        drive = float(parts[1]) if len(parts) > 1 else 1.0
+                    client.settimeout(5.0)
+                    header = client.recv(4)
+                    if header == b"HET1":
+                        self._handle_fpt_ipc(client, header)
                     else:
-                        try:
-                            drive = float(raw) if raw else 0.0
-                        except ValueError:
-                            drive = 0.0
+                        rest = client.recv(1020) if header else b""
+                        raw = (header + rest).decode("utf-8", errors="ignore").strip()
 
-                    if drive > 0.0:
-                        result = self.step_manifold(external_drive=drive)
-                    else:
-                        with self.state_lock:
-                            result = self.latest_state
+                        if raw.startswith("pulse"):
+                            parts = raw.split()
+                            drive = float(parts[1]) if len(parts) > 1 else 1.0
+                        else:
+                            try:
+                                drive = float(raw) if raw else 0.0
+                            except ValueError:
+                                drive = 0.0
 
-                    client.sendall(json.dumps(result).encode("utf-8") + b"\n")
+                        if drive > 0.0:
+                            result = self.step_manifold(external_drive=drive)
+                        else:
+                            with self.state_lock:
+                                result = self.latest_state
+
+                        client.sendall(json.dumps(result).encode("utf-8") + b"\n")
                     client.close()
             except Exception:
                 continue
