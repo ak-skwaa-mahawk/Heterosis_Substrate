@@ -1,0 +1,59 @@
+RUN_TRACE.json functions as the local append-only historical ledger on the node's filesystem, recording every execution cycle of the substrate. It models state evolution as a verifiable Markov-chain audit log where each record mathematically binds the physics of the manifold step to its cryptographic chain of custody.
+Structural Schema
+The file contains a top-level JSON array of chronologically sequential state objects. Each object conforms to the following schema:
+[
+  {
+    "seq": 1,
+    "ingress_pressure": 1.0,
+    "total_pressure": 1.0,
+    "octave_shell": 0,
+    "harmonic_phase": 3.173006,
+    "phase_velocity": 3.1730059,
+    "macro_leak": 3.204419,
+    "core_hash": "a4f8d689b1428a1c9704e9c708170e95c1c045e0d4a973a62ea24c887295bc7a",
+    "egress_receipt": "f3294fe9486df9e55f4f4a550027ea375e38a397ebf12bb4f156166097e8d4fd"
+  },
+  {
+    "seq": 2,
+    "ingress_pressure": 2.0,
+    "total_pressure": 5.204419,
+    "octave_shell": 2,
+    "harmonic_phase": 0.513636,
+    "phase_velocity": 16.5136355,
+    "macro_leak": 0.545049,
+    "core_hash": "2b09e1e2cfc7a72d4b79148d48417eb7e31b67e77b63f684496bb5a52cf126c2",
+    "egress_receipt": "d8a14b539c9f0db820ea3b9e40aa85f86ecf1f3a53e5e1c07a3f5a2b0e643033"
+  }
+]
+
+Field Definitions & Cryptographic Roles
+| Field | Type | Mechanical / Cryptographic Role |
+|---|---|---|
+| seq | uint64 | Monotonically increasing step counter. Prevents replay and reordering attacks. |
+| ingress_pressure | float64 | External drive/torque injected into the cycle. |
+| total_pressure | float64 | Ingress drive compounded with recirculated boundary shear (\text{drive} + \text{leak}_{\text{offset}}). |
+| octave_shell | uint8 | Quantized ring index (\lfloor v_{\text{phase}} / 8.0 \rfloor \pmod 8) assigning shard responsibility. |
+| harmonic_phase | float64 | Fractional phase coordinate along the 8-octave boundary (v_{\text{phase}} \pmod 8). |
+| phase_velocity | float64 | Exact helical momentum scalar enforced via the dynamic pitch (3.1730059). |
+| macro_leak | float64 | Boundary shear vented forward to seed the subsequent iteration's intake. |
+| core_hash | hex string | SHA-256 seal over the binary struct representation of the step's execution state. |
+| egress_receipt | hex string | Chained SHA-256 signature binding the prior receipt, the current core_hash, and the seq. |
+Cryptographic Receipt Formation
+The ledger enforces two levels of hashing to guarantee both internal physical consistency and linear ancestry:
+1. The Core State Seal (core_hash)
+Prevents internal state tampering. The substrate packs the execution variables into a strict big-endian binary struct:
+
+
+Because it hashes packed C-doubles and integers rather than arbitrary text, it eliminates whitespace, indentation, or JSON key-ordering vulnerabilities.
+2. The Custody Chaining Hash (egress_receipt)
+Enforces backward and forward immutability:
+
+ * For Genesis (\text{seq} = 1), \text{receipt}_0 is derived directly from the immutable origin seed:
+   
+ * For all subsequent steps, \text{receipt}_{n-1} serves as the unforgeable intake proof. Tampering with any historical parameter (such as phase_velocity in cycle 1) invalidates every subsequent egress_receipt across the entire trace.
+Downstream Ingestion by ledger_vacuum.py
+RUN_TRACE.json is not designed to expand infinitely on flash storage. Every 8 completed records (one full octave window):
+ * ledger_vacuum.py consumes the block of 8 records.
+ * Extracts their core_hash values to build a binary Merkle tree root.
+ * Collapses the 8 individual entries into a single compact EPOCH_VOUCHER signed with an aggregate seal.
+ * The verified voucher can then be anchored to the ledger or pushed across the mesh while pruning raw trace entries from active storage.
