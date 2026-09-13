@@ -8,3 +8,4 @@ FAULT_POSTMORTEM.json
 ADAPTIVE_RESONANCE_TRACE.json
 __pycache__/
 *.pyc
+supervisor.log
