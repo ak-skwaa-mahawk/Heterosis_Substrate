@@ -6,9 +6,9 @@ import socket
 import struct
 import threading
 import time
-from base import HeterosisSubstrate
-from consensus_engine import HeterosisConsensus
-from drift_compensator import ChiralDriftCompensator
+from .base import HeterosisSubstrate
+from .consensus_engine import HeterosisConsensus
+from .drift_compensator import ChiralDriftCompensator
 
 class MeshSyncEngine:
     """

@@ -12,10 +12,10 @@ import threading
 import time
 
 from .mesh_substrate import MeshCoupledSubstrate
-from drift_compensator import ChiralDriftCompensator
-from tripwire_sentinel import SubstrateTripwire
-from adaptive_resonator import AdaptiveResonator
-from consensus_engine import HeterosisConsensus
+from .drift_compensator import ChiralDriftCompensator
+from .tripwire_sentinel import SubstrateTripwire
+from .adaptive_resonator import AdaptiveResonator
+from .consensus_engine import HeterosisConsensus
 
 SOCKET_PATH = "/data/data/com.termux/files/usr/tmp/heterosis.sock"
 
