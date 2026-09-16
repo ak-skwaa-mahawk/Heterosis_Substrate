@@ -79,8 +79,8 @@ class HarmonicTaskWorker:
         return recomputed == claimed_receipt
 
 if __name__ == "__main__":
-    from mesh_substrate import MeshCoupledSubstrate
-    from chiral_router import ChiralOctaveRouter
+    from .mesh_substrate import MeshCoupledSubstrate
+    from .chiral_router import ChiralOctaveRouter
 
     # Set up node and determine assigned octave
     node_name = "worker_node_gamma_09"

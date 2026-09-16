@@ -91,7 +91,7 @@ class ChiralEnvelope:
         return decrypted
 
 if __name__ == "__main__":
-    from mesh_substrate import MeshCoupledSubstrate
+    from .mesh_substrate import MeshCoupledSubstrate
     from consensus_engine import HeterosisConsensus
 
     # 1. Spin up two edge nodes and generate a shared consensus root

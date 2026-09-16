@@ -84,7 +84,7 @@ class ChiralOctaveRouter:
         return routing_manifest
 
 if __name__ == "__main__":
-    from mesh_substrate import MeshCoupledSubstrate
+    from .mesh_substrate import MeshCoupledSubstrate
 
     # Initialize a local node assigned to a deterministic octave shell
     local_node_id = "edge_alpha_77"

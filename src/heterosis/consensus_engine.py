@@ -62,7 +62,7 @@ class HeterosisConsensus:
         }
 
 if __name__ == "__main__":
-    from mesh_substrate import MeshCoupledSubstrate
+    from .mesh_substrate import MeshCoupledSubstrate
 
     # Simulate two independent edge runs seeded differently
     node_alpha = MeshCoupledSubstrate(seed="edge_alpha_origin")

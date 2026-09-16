@@ -92,7 +92,7 @@ class ChiralPageCache:
         return restored
 
 if __name__ == "__main__":
-    from mesh_substrate import MeshCoupledSubstrate
+    from .mesh_substrate import MeshCoupledSubstrate
 
     substrate = MeshCoupledSubstrate(seed="bare_metal_origin_dan_kee")
     pager = ChiralPageCache()

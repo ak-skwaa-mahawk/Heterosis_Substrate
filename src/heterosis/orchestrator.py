@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 
-from mesh_substrate import MeshCoupledSubstrate
+from .mesh_substrate import MeshCoupledSubstrate
 from drift_compensator import ChiralDriftCompensator
 from tripwire_sentinel import SubstrateTripwire
 from adaptive_resonator import AdaptiveResonator

@@ -79,7 +79,7 @@ class TopologyProjector:
 if __name__ == "__main__":
     # Test feed: reads from local CURRENT_STATE.json or generates live pulse trace
     try:
-        from mesh_substrate import MeshCoupledSubstrate
+        from .mesh_substrate import MeshCoupledSubstrate
         substrate = MeshCoupledSubstrate(seed="bare_metal_origin_dan_kee")
         
         while True:
