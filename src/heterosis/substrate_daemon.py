@@ -4,6 +4,7 @@ import struct
 import time
 import os
 import socket
+from .fpt_substrate_client import MAGIC_HEADER, MAX_PAYLOAD_SIZE, recv_exact
 import select
 
 class SovereignSubstrateDaemon:
@@ -111,16 +112,37 @@ class SovereignSubstrateDaemon:
                 readable, _, _ = select.select([server], [], [], 0.5)
                 for s in readable:
                     client, _ = server.accept()
-                    raw_data = client.recv(1024).decode("utf-8").strip()
                     try:
-                        drive_val = float(raw_data) if raw_data else 0.0
-                    except ValueError:
-                        drive_val = 0.0
-                    
-                    # Advance engine with peer drive
-                    receipt = self.advance(external_drive=drive_val)
-                    client.sendall(json.dumps(receipt).encode("utf-8") + b"\n")
-                    client.close()
+                        peek_header = client.recv(4, socket.MSG_PEEK)
+                        if peek_header == MAGIC_HEADER:
+                            magic = recv_exact(client, 4)
+                            len_bytes = recv_exact(client, 4)
+                            (payload_len,) = struct.unpack(">I", len_bytes)
+                            if payload_len > MAX_PAYLOAD_SIZE:
+                                raise ValueError(f"Payload ceiling exceeded: {payload_len}")
+                            payload_raw = recv_exact(client, payload_len)
+                            intent = json.loads(payload_raw.decode("utf-8"))
+                            drive_val = float(intent.get("params", {}).get("external_drive", 0.0))
+                            receipt = self.advance(external_drive=drive_val)
+                            resp_bytes = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                            frame = MAGIC_HEADER + struct.pack(">I", len(resp_bytes)) + resp_bytes
+                            client.sendall(frame)
+                        else:
+                            raw_data = client.recv(1024).decode("utf-8").strip()
+                            try:
+                                drive_val = float(raw_data) if raw_data else 0.0
+                            except ValueError:
+                                drive_val = 0.0
+                            receipt = self.advance(external_drive=drive_val)
+                            client.sendall(json.dumps(receipt).encode("utf-8") + b"\n")
+                    except Exception as err:
+                        err_resp = {"error": str(err), "status": "REJECTED"}
+                        try:
+                            client.sendall(json.dumps(err_resp).encode("utf-8") + b"\n")
+                        except Exception:
+                            pass
+                    finally:
+                        client.close()
 
                 # Self-driven circulation pulse every 2 seconds if no peer writes
                 if time.time() - last_pulse_time >= 2.0:
