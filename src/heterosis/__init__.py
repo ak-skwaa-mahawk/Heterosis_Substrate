@@ -2,7 +2,7 @@
 Heterosis Substrate: Sovereign manifold substrate with Ed25519 IPC authority.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 from .fpt_substrate_client import SubstrateIPCClient, sign_intent
 from .orchestrator import MasterSubstrateOrchestrator
