@@ -42,12 +42,12 @@ class HeterosisSubstrate:
         macro_leak = boundary_remainder * (self.DYNAMIC_PITCH - 1.0)
         return float(macro_leak)
 
-    def step(self, ingress_pressure: float) -> dict:
+    def step(self, ingress_pressure: float, restoring_precession: float = 0.0) -> dict:
         """
         Scalar stepping interface required by audit_harness.py and recursive pipelines.
         """
         self.state_sequence += 1
-        total_pressure = ingress_pressure + self.macro_leak_offset
+        total_pressure = ingress_pressure + self.macro_leak_offset + restoring_precession
         phase_velocity = total_pressure * self.DYNAMIC_PITCH
 
         octave_shell = int(phase_velocity // self.HARMONIC_OCTAVE)
@@ -75,6 +75,7 @@ class HeterosisSubstrate:
         record = {
             "seq": self.state_sequence,
             "ingress_pressure": round(ingress_pressure, 6),
+            "restoring_precession": round(restoring_precession, 7),
             "total_pressure": round(total_pressure, 6),
             "octave_shell": octave_shell,
             "harmonic_phase": round(harmonic_phase, 6),

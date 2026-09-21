@@ -47,6 +47,9 @@ class SubstrateAuditHarness:
         seq_val = r1.get("seq", r1.get("state_sequence", 0))
         self.assert_eq(seq_val, 1, "Base: Step 1 sequence")
         self.assert_eq(round(r1["phase_velocity"], 7), 3.1730059, "Base: Dynamic pitch multiplication")
+        r_prec = sub.step(1.0, restoring_precession=-0.05)
+        self.assert_true("restoring_precession" in r_prec, "Base: Restoring precession key recorded")
+        self.assert_eq(round(r_prec["total_pressure"], 6), round(1.0 + r1["macro_leak"] - 0.05, 6), "Base: Precession coupled to total pressure")
 
         # 2. Manifold
         engine = RecursiveManifold("bare_metal_origin_dan_kee")
