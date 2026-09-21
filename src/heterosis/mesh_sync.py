@@ -42,9 +42,8 @@ class MeshSyncEngine:
     def process_local_pulse(self, base_ingress: float = 1.0) -> dict:
         """Processes an audited closed-loop step with real-time precession compensation."""
         with self.state_lock:
-            # Apply counter-precession torque to intake pressure
-            corrected_pressure = max(0.0001, base_ingress + self.last_precession)
-            state = self.substrate.step(ingress_pressure=corrected_pressure)
+            # Pass restoring_precession directly into substrate step
+            state = self.substrate.step(ingress_pressure=base_ingress, restoring_precession=self.last_precession)
 
             # Calculate continuous drift feedback
             telemetry = self.compensator.calculate_precession({
@@ -75,6 +74,7 @@ class MeshSyncEngine:
                     "seq": self.latest_state["seq"],
                     "phase_velocity": self.latest_state["phase_velocity"],
                     "macro_leak": self.latest_state["macro_leak"],
+                    "restoring_precession": self.latest_state.get("restoring_precession", 0.0),
                     "core_hash": self.latest_state["core_hash"],
                     "timestamp_ns": time.time_ns()
                 }
@@ -126,6 +126,7 @@ class MeshSyncEngine:
                         peer_state = {
                             "seq": message.get("seq"),
                             "phase_velocity": message.get("phase_velocity"),
+                            "restoring_precession": message.get("restoring_precession", 0.0),
                             "core_hash": message.get("core_hash")
                         }
                         proof = HeterosisConsensus.interlock(self.latest_state, peer_state)
@@ -133,6 +134,7 @@ class MeshSyncEngine:
                     self.active_peers[peer_id] = {
                         "last_seen": time.time(),
                         "phase_velocity": message.get("phase_velocity"),
+                        "restoring_precession": message.get("restoring_precession", 0.0),
                         "heterosis_gain": proof["heterosis_gain"],
                         "heterosis_root": proof["heterosis_root"]
                     }
