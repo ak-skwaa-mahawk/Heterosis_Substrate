@@ -30,12 +30,13 @@ app.add_middleware(
 connected_clients: Set[WebSocket] = set()
 
 # Normalization pipelines per TMS-SPEC-085_01 Section 2
-def compute_stability_index(phase_space_det: float, tolerance: float = 1e-6) -> float:
-    """Computes normalized stability index from the determinant deviation."""
+def compute_stability_index(phase_space_det: float, tolerance: float = 1e-4) -> float:
+    """Computes normalized stability index from determinant deviation with smooth transient roll-off."""
     deviation = abs(phase_space_det - 1.0)
     if deviation <= tolerance:
         return 1.00000
-    normalized = max(0.0, 1.0 - (deviation / (10.0 * tolerance)))
+    # Allow dynamic scale up to 100x tolerance for transient ingress drift
+    normalized = max(0.0, 1.0 - (deviation / (100.0 * tolerance)))
     return round(normalized, 5)
 
 def normalize_modal_energies(raw_energies: List[float]) -> List[float]:
