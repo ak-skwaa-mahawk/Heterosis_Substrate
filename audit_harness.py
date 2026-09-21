@@ -103,6 +103,29 @@ class SubstrateAuditHarness:
         out = comp.calculate_precession({"seq": 1, "phase_velocity": 3.20, "net_pressure": 1.0})
         self.assert_true("restoring_precession" in out, "Compensator: Micro-precession vector generated")
 
+        # 16. Chaotic Stress & Transient Stability (1000 Cycles)
+        stress_sub = HeterosisSubstrate("stress_transient_vector_dan_kee")
+        stress_comp = ChiralDriftCompensator()
+        last_prec = 0.0
+        bounded = True
+        import math
+        for step_idx in range(1, 1001):
+            shock = 25.0 if step_idx % 250 == 0 else 0.0
+            ingress = 1.0 + 2.5 * math.sin(step_idx * 0.15) + shock
+            st = stress_sub.step(ingress_pressure=ingress, restoring_precession=last_prec)
+            comp = stress_comp.calculate_precession({
+                "seq": st["seq"],
+                "phase_velocity": st["phase_velocity"],
+                "net_pressure": st["total_pressure"],
+                "macro_leak": st["macro_leak"]
+            })
+            last_prec = comp["restoring_precession"]
+            if math.isnan(st["phase_velocity"]) or math.isinf(st["phase_velocity"]) or abs(last_prec) > 1.0:
+                bounded = False
+                break
+        self.assert_true(bounded, "Stress: 1000-cycle chaotic flutter bounds preserved")
+        self.assert_eq(stress_sub.state_sequence, 1000, "Stress: Sequence chain unbroken across transients")
+
         elapsed = (time.perf_counter() - t0) * 1000.0
         self.render_report(elapsed)
 
