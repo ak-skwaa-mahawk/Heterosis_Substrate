@@ -7,8 +7,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Head
 from fastapi.middleware.cors import CORSMiddleware
 from mesh_sync import MeshSyncEngine
 
-# Load mesh sync engine daemon
-engine = MeshSyncEngine(node_id="node_alpha")
+import os
+# Load mesh sync engine daemon with environment override
+node_label = os.getenv("NODE_ID", "node_alpha")
+engine = MeshSyncEngine(node_id=node_label)
 engine.start()
 
 app = FastAPI(
