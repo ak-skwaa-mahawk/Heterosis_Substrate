@@ -33,20 +33,22 @@ connected_clients: Set[WebSocket] = set()
 
 # Normalization pipelines per TMS-SPEC-085_01 Section 2
 def compute_stability_index(phase_space_det: float, tolerance: float = 1e-4) -> float:
-    """Computes normalized stability index from determinant deviation with smooth transient roll-off."""
+    """Computes normalized stability index with defensive sanitation against non-finite inputs."""
+    if not math.isfinite(phase_space_det):
+        return 0.00000
     deviation = abs(phase_space_det - 1.0)
     if deviation <= tolerance:
         return 1.00000
-    # Allow dynamic scale up to 100x tolerance for transient ingress drift
     normalized = max(0.0, 1.0 - (deviation / (100.0 * tolerance)))
     return round(normalized, 5)
 
 def normalize_modal_energies(raw_energies: List[float]) -> List[float]:
-    """Destroys absolute Hamiltonian amplitude while maintaining relative spectral partition."""
-    total = sum(raw_energies)
+    """Destroys absolute Hamiltonian amplitude with defensive sanitization against NaN/Inf vectors."""
+    sanitized = [e if (isinstance(e, (int, float)) and math.isfinite(e) and e > 0.0) else 0.0 for e in raw_energies]
+    total = sum(sanitized)
     if total <= 0.0:
-        return [0.12500] * 8
-    return [round(e / total, 5) for e in raw_energies]
+        return [0.12500] * (len(raw_energies) if len(raw_energies) > 0 else 8)
+    return [round(e / total, 5) for e in sanitized]
 
 def build_abstracted_telemetry(st: dict) -> dict:
     """Strips internal phase vectors/MMIO addresses and exposes high-level metrics."""
