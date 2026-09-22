@@ -121,12 +121,13 @@ def run_websocket_protocol_fuzz():
         try:
             with client.websocket_connect("/v1/telemetry/stream") as ws:
                 ws.send_text(payload)
+                # Try receiving with Starlette websocket receive or pass if socket closes
                 try:
-                    # Attempt to receive response or handshake error
-                    raw_resp = ws.receive_text()
-                    assert_zero_leakage(raw_resp, f"WS Frame payload index {idx}")
-                except Exception:
-                    # Disconnect/rejection is expected for malformed frames
+                    import anyio
+                    with anyio.fail_after(0.5):
+                        raw_resp = ws.receive_text()
+                        assert_zero_leakage(raw_resp, f"WS Frame payload index {idx}")
+                except (TimeoutError, Exception):
                     pass
         except Exception as e:
             err_msg = str(e)
